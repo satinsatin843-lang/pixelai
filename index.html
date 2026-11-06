@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PixelAI – Free AI Image Creator</title>
+<style>
+:root{--bg:#f6f5fb;--card:#fff;--text:#1b1a29;--muted:#6b6a80;--a:#6c4cf5;--b:#ff5fa2;--line:#e4e2f0;--ok:#16a34a}
+@media (prefers-color-scheme:dark){:root{--bg:#12111c;--card:#1c1b2b;--text:#f1f0fa;--muted:#9a99b3;--line:#2e2d44;--ok:#4ade80}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.5}
+.wrap{max-width:720px;margin:0 auto;padding:20px 16px 48px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;gap:10px}
+.logo{font-weight:800;font-size:1.3rem;background:linear-gradient(90deg,var(--a),var(--b));-webkit-background-clip:text;background-clip:text;color:transparent}
+.badge{background:var(--ok);color:#fff;font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:99px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
+h1{font-size:1.5rem;margin:0 0 6px}.sub{color:var(--muted);margin:0 0 14px}
+label{display:block;font-weight:600;font-size:.9rem;margin:14px 0 6px}
+input,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font:inherit}
+textarea{min-height:90px;resize:vertical}
+button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:12px 18px;font-weight:700;background:linear-gradient(90deg,var(--a),var(--b));color:#fff;width:100%;margin-top:16px}
+button:disabled{opacity:.6}
+.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);width:auto;margin:0;padding:6px 12px;font-size:.8rem}
+.err{color:#e11d48;font-size:.85rem;margin-top:8px;min-height:1.2em}
+.hidden{display:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:20px}
+.item{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px}
+.item img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block}
+.item a{display:inline-block;margin-top:8px;font-size:.85rem;color:var(--a);font-weight:700;text-decoration:none}
+.cap{font-size:.78rem;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><span class="logo">PixelAI</span><span><span class="badge">FREE</span> <button class="ghost hidden" id="logout">Logout</button></span></header>
+
+<section id="login" class="card">
+<h1>Welcome 👋</h1>
+<p class="sub">Email se login karo aur free me AI images banao.</p>
+<label for="email">Email</label>
+<input id="email" type="email" placeholder="you@example.com" autocomplete="email">
+<div class="err" id="loginErr"></div>
+<button id="loginBtn">Login / Continue</button>
+</section>
+
+<section id="app" class="hidden">
+<div class="card">
+<h1>Image banao</h1>
+<p class="sub" id="hello"></p>
+<label for="prompt">Aap kya banana chahte ho? (English me best chalta hai)</label>
+<textarea id="prompt" placeholder="e.g. a beautiful sunset at Ganga ghat in Varanasi, realistic photo"></textarea>
+<div class="err" id="genErr"></div>
+<button id="genBtn">✨ Generate Image</button>
+</div>
+<div class="grid" id="grid"></div>
+</section>
+</div>
+
+<script>
+var $ = function(id){return document.getElementById(id)};
+var token = localStorage.getItem("px_token") || "";
+var email = localStorage.getItem("px_email") || "";
+var left = null;
+
+function render(){
+  var on = !!token;
+  $("login").classList.toggle("hidden", on);
+  $("app").classList.toggle("hidden", !on);
+  $("logout").classList.toggle("hidden", !on);
+  if (on) $("hello").textContent = email + (left !== null ? "  •  Aaj ki bachi images: " + left : "");
+}
+function logout(){
+  token = ""; email = "";
+  localStorage.removeItem("px_token"); localStorage.removeItem("px_email");
+  $("grid").innerHTML = ""; render();
+}
+$("logout").onclick = logout;
+
+$("loginBtn").onclick = async function(){
+  $("loginErr").textContent = "";
+  try {
+    var r = await fetch("/api/login", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({email: $("email").value})});
+    var d = await r.json();
+    if (!r.ok) { $("loginErr").textContent = d.error || "Error"; return; }
+    token = d.token; email = d.email; left = d.left;
+    localStorage.setItem("px_token", token); localStorage.setItem("px_email", email);
+    render();
+  } catch(e) { $("loginErr").textContent = "Server se connect nahi ho paya."; }
+};
+$("email").addEventListener("keydown", function(e){ if (e.key === "Enter") $("loginBtn").click(); });
+
+$("genBtn").onclick = async function(){
+  var p = $("prompt").value.trim();
+  $("genErr").textContent = "";
+  if (!p) { $("genErr").textContent = "Pehle prompt likho."; return; }
+  var b = $("genBtn"); b.disabled = true; b.textContent = "Ban rahi hai… (10-20 sec)";
+  try {
+    var r = await fetch("/api/generate", {method:"POST", headers:{"Content-Type":"application/json","x-token":token}, body: JSON.stringify({prompt:p})});
+    if (r.status === 401) { logout(); return; }
+    if (!r.ok) { var d = await r.json(); $("genErr").textContent = d.error || "Error"; return; }
+    left = Number(r.headers.get("x-left"));
+    var url = URL.createObjectURL(await r.blob());
+    var div = document.createElement("div"); div.className = "item";
+    var img = document.createElement("img"); img.src = url; img.alt = p;
+    var a = document.createElement("a"); a.href = url; a.download = "pixelai-" + Date.now() + ".jpg"; a.textContent = "⬇ Download";
+    var c = document.createElement("div"); c.className = "cap"; c.textContent = p;
+    div.appendChild(img); div.appendChild(a); div.appendChild(c);
+    $("grid").insertBefore(div, $("grid").firstChild);
+    render();
+  } catch(e) { $("genErr").textContent = "Kuch gadbad hui, dobara try karo."; }
+  finally { b.disabled = false; b.textContent = "✨ Generate Image"; }
+};
+render();
+</script>
+</body>
+</html>
